@@ -37,6 +37,11 @@ export default function Home() {
     }
   }, [user, loading, router]);
 
+  const handleLogout = () => {
+    logout();
+    router.push('/login');
+  }
+
   if (loading || !user || !userData) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
@@ -71,7 +76,7 @@ export default function Home() {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={logout}>
+                  <Button variant="ghost" size="icon" onClick={handleLogout}>
                     <LogOut className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>

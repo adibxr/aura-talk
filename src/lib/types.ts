@@ -5,8 +5,8 @@ export interface UserProfile {
   username: string;
   email: string;
   profilePic: string | null;
-  createdAt: Timestamp;
-  lastActive: Timestamp;
+  createdAt: Timestamp | Date;
+  lastActive: Timestamp | Date;
 }
 
 export interface Message {

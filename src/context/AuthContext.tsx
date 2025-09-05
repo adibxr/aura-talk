@@ -1,9 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User, signOut } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, Timestamp } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import type { User } from 'firebase/auth';
+import { Timestamp } from 'firebase/firestore';
 import { UserProfile } from '@/lib/types';
 
 interface AuthContextType {
@@ -11,6 +10,7 @@ interface AuthContextType {
   userData: UserProfile | null;
   loading: boolean;
   logout: () => void;
+  login: (user: UserProfile) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -18,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   userData: null,
   loading: true,
   logout: () => {},
+  login: () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -27,37 +28,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [userData, setUserData] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const logout = () => {
-    signOut(auth);
-  };
-
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        const userDocRef = doc(db, 'users', user.uid);
-        const unsubscribeSnapshot = onSnapshot(userDocRef, (doc) => {
-          if (doc.exists()) {
-            setUserData({ uid: doc.id, ...doc.data() } as UserProfile);
-          } else {
-            setUserData(null); // Handle case where user exists in auth but not firestore
-          }
-          setUser(user);
-          setLoading(false);
-        });
-
-        return () => unsubscribeSnapshot();
-      } else {
-        setUser(null);
-        setUserData(null);
-        setLoading(false);
+    try {
+      const storedUserData = localStorage.getItem('userData');
+      if (storedUserData) {
+        const parsedData = JSON.parse(storedUserData);
+        // We need to convert timestamp strings back to Date objects, then to Timestamp objects
+        const aT = new Date(parsedData.createdAt);
+        const lA = new Date(parsedData.lastActive);
+        parsedData.createdAt = Timestamp.fromDate(aT);
+        parsedData.lastActive = Timestamp.fromDate(lA);
+        setUserData(parsedData);
+        setUser(parsedData as User);
       }
-    });
-
-    return () => unsubscribe();
+    } catch (error) {
+      console.error("Failed to parse user data from localStorage", error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  const login = (userProfile: UserProfile) => {
+    const userForState = {
+      ...userProfile,
+      // Convert Date objects to Timestamps for consistency with Firestore types
+      createdAt: Timestamp.fromDate(userProfile.createdAt as Date),
+      lastActive: Timestamp.fromDate(userProfile.lastActive as Date),
+    }
+
+    setUserData(userForState);
+    setUser(userProfile as any as User); // Mocking Firebase User object
+    localStorage.setItem('userData', JSON.stringify(userProfile));
+  };
+
+  const logout = () => {
+    setUser(null);
+    setUserData(null);
+    localStorage.removeItem('userData');
+  };
+
   return (
-    <AuthContext.Provider value={{ user, userData, loading, logout }}>
+    <AuthContext.Provider value={{ user, userData, loading, logout, login }}>
       {children}
     </AuthContext.Provider>
   );

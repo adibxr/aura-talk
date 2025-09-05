@@ -5,16 +5,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '@/context/AuthContext';
-import { db, storage, auth } from '@/lib/firebase';
-import { doc, getDoc, writeBatch, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { updateEmail as updateAuthEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Camera, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -27,7 +21,7 @@ const formSchema = z.object({
 });
 
 export default function Settings() {
-  const { user, userData } = useAuth();
+  const { userData, login } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -51,70 +45,47 @@ export default function Settings() {
     }
   };
 
+  const getBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+  }
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    if (!user || !userData) return;
+    if (!userData) return;
 
     setIsLoading(true);
-    const batch = writeBatch(db);
-
+    
     try {
-      // Handle username change
-      if (values.username !== userData.username) {
-        const newUsernameRef = doc(db, 'usernames', values.username.toLowerCase());
-        const usernameDoc = await getDoc(newUsernameRef);
-        if (usernameDoc.exists()) {
-          form.setError('username', { type: 'manual', message: 'This username is already taken.' });
-          setIsLoading(false);
-          return;
-        }
-        const oldUsernameRef = doc(db, 'usernames', userData.username.toLowerCase());
-        batch.delete(oldUsernameRef);
-        batch.set(newUsernameRef, { uid: user.uid });
-        batch.update(doc(db, 'users', user.uid), { username: values.username });
-      }
+      let newProfilePic = userData.profilePic;
 
-      // Handle email change - Note: Firebase requires recent re-authentication for this.
-      // This basic implementation might fail if the user hasn't logged in recently.
-      if (values.email !== userData.email) {
-        try {
-          await updateAuthEmail(user, values.email);
-          batch.update(doc(db, 'users', user.uid), { email: values.email });
-        } catch (error: any) {
-           toast({ variant: 'destructive', title: 'Email Update Failed', description: 'Re-authentication is required to update your email. Please log out and log back in.' });
-           setIsLoading(false);
-           return;
-        }
-      }
-      
-      await batch.commit();
-
-      // Handle profile picture upload
       if (file) {
         setUploadProgress(0);
-        const storageRef = ref(storage, `profile-pics/${user.uid}`);
-        const uploadTask = uploadBytesResumable(storageRef, file);
-
-        await new Promise<void>((resolve, reject) => {
-          uploadTask.on('state_changed',
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              setUploadProgress(progress);
-            },
-            (error) => {
-              console.error("Upload failed:", error);
-              reject(error);
-            },
-            async () => {
-              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              await updateDoc(doc(db, 'users', user.uid), { profilePic: downloadURL });
-              setFile(null);
-              setPreviewUrl(null);
-              setUploadProgress(null);
-              resolve();
-            }
-          );
-        });
+        // Simulate upload progress
+        await new Promise(res => setTimeout(res, 500));
+        setUploadProgress(50);
+        newProfilePic = await getBase64(file);
+        await new Promise(res => setTimeout(res, 500));
+        setUploadProgress(100);
+        await new Promise(res => setTimeout(res, 300));
       }
+
+      const updatedUserData = {
+        ...userData,
+        username: values.username,
+        email: values.email,
+        profilePic: newProfilePic,
+        lastActive: new Date(),
+      };
+
+      login(updatedUserData);
+      
+      setFile(null);
+      setPreviewUrl(null);
+      setUploadProgress(null);
 
       toast({ title: 'Profile Updated', description: 'Your profile has been successfully updated.' });
     } catch (error) {
