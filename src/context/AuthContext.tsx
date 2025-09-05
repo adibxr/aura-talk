@@ -1,16 +1,17 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import type { User } from 'firebase/auth';
-import { Timestamp } from 'firebase/firestore';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { doc, getDoc, onSnapshot, setDoc, Timestamp } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 import { UserProfile } from '@/lib/types';
+import { useRouter } from 'next/navigation';
 
 interface AuthContextType {
   user: User | null;
   userData: UserProfile | null;
   loading: boolean;
   logout: () => void;
-  login: (user: UserProfile) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -18,7 +19,6 @@ const AuthContext = createContext<AuthContextType>({
   userData: null,
   loading: true,
   logout: () => {},
-  login: () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -27,48 +27,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-
+  const router = useRouter();
+  
   useEffect(() => {
-    try {
-      const storedUserData = localStorage.getItem('userData');
-      if (storedUserData) {
-        const parsedData = JSON.parse(storedUserData);
-        // We need to convert timestamp strings back to Date objects, then to Timestamp objects
-        const aT = new Date(parsedData.createdAt);
-        const lA = new Date(parsedData.lastActive);
-        parsedData.createdAt = Timestamp.fromDate(aT);
-        parsedData.lastActive = Timestamp.fromDate(lA);
-        setUserData(parsedData);
-        setUser(parsedData as User);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setUser(firebaseUser);
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        
+        const unsubSnapshot = onSnapshot(userDocRef, (doc) => {
+           if (doc.exists()) {
+             setUserData({ uid: doc.id, ...doc.data() } as UserProfile);
+           } else {
+             // This case might happen if a user is created in Auth but not in Firestore.
+             // For Google Sign-in, we create the user doc on first login.
+             // For email/pass, it's created on signup.
+             console.log("User document doesn't exist, redirecting to login to complete profile.");
+             router.push('/login');
+           }
+           setLoading(false);
+        });
+        
+        return () => unsubSnapshot();
+      } else {
+        setUser(null);
+        setUserData(null);
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to parse user data from localStorage", error);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    });
 
-  const login = (userProfile: UserProfile) => {
-    const userForState = {
-      ...userProfile,
-      // Convert Date objects to Timestamps for consistency with Firestore types
-      createdAt: Timestamp.fromDate(userProfile.createdAt as Date),
-      lastActive: Timestamp.fromDate(userProfile.lastActive as Date),
-    }
+    return () => unsubscribe();
+  }, [router]);
 
-    setUserData(userForState);
-    setUser(userProfile as any as User); // Mocking Firebase User object
-    localStorage.setItem('userData', JSON.stringify(userProfile));
-  };
-
-  const logout = () => {
-    setUser(null);
-    setUserData(null);
-    localStorage.removeItem('userData');
+  const logout = async () => {
+    await auth.signOut();
+    router.push('/login');
   };
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, logout, login }}>
+    <AuthContext.Provider value={{ user, userData, loading, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -15,12 +15,20 @@ import { useAuth } from '@/context/AuthContext';
 import { Message } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, Smile, CornerDownLeft } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import Logo from '../Logo';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+
+// A simple emoji picker
+const emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 export default function WorldChat() {
   const { user, userData } = useAuth();
@@ -28,11 +36,12 @@ export default function WorldChat() {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
 
   useEffect(() => {
     const q = query(
       collection(db, 'groups', 'world', 'messages'),
-      orderBy('timestamp', 'asc'),
+      orderBy('timestamp', 'desc'),
       limit(50)
     );
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -40,7 +49,7 @@ export default function WorldChat() {
       querySnapshot.forEach((doc) => {
         msgs.push({ id: doc.id, ...doc.data() } as Message);
       });
-      setMessages(msgs);
+      setMessages(msgs.reverse());
       setLoading(false);
     });
 
@@ -66,10 +75,16 @@ export default function WorldChat() {
       senderProfilePic: userData.profilePic,
       text: newMessage,
       timestamp: Timestamp.now(),
+      ...(replyTo && { replyTo: replyTo.id }),
     });
 
     setNewMessage('');
+    setReplyTo(null);
   };
+  
+  const getReplyingToMessage = (replyToId: string): Message | undefined => {
+    return messages.find(m => m.id === replyToId);
+  }
 
   if (loading) {
     return (
@@ -82,52 +97,86 @@ export default function WorldChat() {
   return (
     <div className="flex flex-col h-full p-2 md:p-4">
       <ScrollArea className="flex-grow" ref={scrollAreaRef}>
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-2">
           {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={cn(
-                'flex items-start gap-3',
-                msg.senderId === user?.uid ? 'justify-end' : ''
-              )}
-            >
-              {msg.senderId !== user?.uid && (
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={msg.senderProfilePic || undefined} alt={msg.senderUsername} />
-                  <AvatarFallback>
-                    <Logo className="h-4 w-4 text-muted-foreground" />
-                  </AvatarFallback>
-                </Avatar>
+            <div key={msg.id} className="group relative">
+              {msg.replyTo && getReplyingToMessage(msg.replyTo) && (
+                <div className="ml-10 mb-1 text-xs text-muted-foreground flex items-center">
+                  <CornerDownLeft className="w-3 h-3 mr-1"/>
+                  Replying to <span className="font-semibold ml-1">{getReplyingToMessage(msg.replyTo)?.senderUsername}</span>
+                </div>
               )}
               <div
                 className={cn(
-                  'p-3 rounded-lg max-w-xs md:max-w-md',
-                  msg.senderId === user?.uid
-                    ? 'bg-accent text-accent-foreground rounded-br-none'
-                    : 'bg-muted rounded-bl-none'
+                  'flex items-start gap-3',
+                  msg.senderId === user?.uid ? 'justify-end' : ''
                 )}
               >
-                <div className="flex items-baseline gap-2">
-                  <p className="font-bold text-sm">{msg.senderUsername}</p>
-                  <time className="text-xs opacity-70">
-                    {msg.timestamp &&
-                      format(msg.timestamp.toDate(), 'p')}
-                  </time>
+                {msg.senderId !== user?.uid && (
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={msg.senderProfilePic || undefined} alt={msg.senderUsername} />
+                    <AvatarFallback>
+                      <Logo className="h-4 w-4 text-muted-foreground" />
+                    </AvatarFallback>
+                  </Avatar>
+                )}
+                <div
+                  className={cn(
+                    'p-3 rounded-2xl max-w-xs md:max-w-md relative',
+                    msg.senderId === user?.uid
+                      ? 'bg-accent text-accent-foreground rounded-br-lg'
+                      : 'bg-muted rounded-bl-lg'
+                  )}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <p className="font-bold text-sm">{msg.senderUsername}</p>
+                    <time className="text-xs opacity-70">
+                      {msg.timestamp &&
+                        format(msg.timestamp.toDate(), 'p')}
+                    </time>
+                  </div>
+                  <p className="text-sm mt-1">{msg.text}</p>
                 </div>
-                <p className="text-sm mt-1">{msg.text}</p>
+                {msg.senderId === user?.uid && (
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={msg.senderProfilePic || undefined} alt={msg.senderUsername} />
+                    <AvatarFallback>
+                      <Logo className="h-4 w-4 text-muted-foreground" />
+                    </AvatarFallback>
+                  </Avatar>
+                )}
+                <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-card border rounded-full shadow-sm -mt-3 -mr-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full">
+                        <Smile className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-1 w-auto">
+                      <div className="flex gap-1">
+                        {emojis.map(emoji => (
+                           <Button key={emoji} variant="ghost" size="icon" className="h-8 w-8 text-lg">
+                            {emoji}
+                          </Button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={() => setReplyTo(msg)}>
+                    <CornerDownLeft className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              {msg.senderId === user?.uid && (
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={msg.senderProfilePic || undefined} alt={msg.senderUsername} />
-                  <AvatarFallback>
-                    <Logo className="h-4 w-4 text-muted-foreground" />
-                  </AvatarFallback>
-                </Avatar>
-              )}
             </div>
           ))}
         </div>
       </ScrollArea>
+      {replyTo && (
+        <div className="p-2 border-t text-sm text-muted-foreground">
+          Replying to <span className="font-semibold">{replyTo.senderUsername}</span>
+          <Button variant="ghost" size="sm" onClick={() => setReplyTo(null)} className="ml-2">Cancel</Button>
+        </div>
+      )}
       <form
         onSubmit={handleSendMessage}
         className="flex items-center gap-2 border-t p-2 md:p-4 mt-2"

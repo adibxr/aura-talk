@@ -5,8 +5,8 @@ export interface UserProfile {
   username: string;
   email: string;
   profilePic: string | null;
-  createdAt: Timestamp | Date;
-  lastActive: Timestamp | Date;
+  createdAt: Timestamp;
+  lastActive: Timestamp;
 }
 
 export interface Message {
@@ -16,6 +16,8 @@ export interface Message {
   senderProfilePic: string | null;
   text: string;
   timestamp: Timestamp;
+  reactions?: { [emoji: string]: string[] }; // emoji: list of user UIDs
+  replyTo?: string; // message ID
 }
 
 export interface DirectMessage extends Message {
