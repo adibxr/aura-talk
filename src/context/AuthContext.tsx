@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { UserProfile } from '@/lib/types';
 import { useRouter } from 'next/navigation';
@@ -30,6 +30,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const router = useRouter();
   
   useEffect(() => {
+    if (!auth) {
+        setLoading(false);
+        return;
+    }
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
@@ -39,9 +43,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
            if (doc.exists()) {
              setUserData({ uid: doc.id, ...doc.data() } as UserProfile);
            } else {
-             // This case might happen if a user is created in Auth but not in Firestore.
-             // For Google Sign-in, we create the user doc on first login.
-             // For email/pass, it's created on signup.
              console.log("User document doesn't exist, redirecting to login to complete profile.");
              router.push('/login');
            }
@@ -60,7 +61,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [router]);
 
   const logout = async () => {
-    await auth.signOut();
+    if (auth) {
+      await auth.signOut();
+    }
     router.push('/login');
   };
 
